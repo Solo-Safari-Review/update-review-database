@@ -44,7 +44,6 @@ WebDriverWait(driver, 10).until(
 )
 
 # Target timestamp
-
 # with last data from database
 conn = mysql.connector.connect(
     host="localhost",
@@ -53,17 +52,19 @@ conn = mysql.connector.connect(
     password="",  # Sesuaikan dengan password Anda
 )
 cursor = conn.cursor(dictionary=True)
-query = "SELECT * FROM reviews ORDER BY created_at DESC LIMIT 1"
+query = "SELECT * FROM reviews ORDER BY id DESC LIMIT 1"
 cursor.execute(query)
 last_data = cursor.fetchone()
 
-target_timestamp = last_data['created_at']
+target_timestamp = last_data['created_at'].replace(minute=0, second=0, microsecond=0)
+last_username = last_data['username']
 
 cursor.close()
 conn.close()
 
+# manual timestamp
 # target_timestamp = time_to_timestamp("sebulan lalu")
-before_timestamp = (datetime.now() + timedelta(days=1))
+before_timestamp = datetime.now()
 on_target = False
 
 # get the frame element
@@ -73,6 +74,8 @@ target_found = False
 
 # Get the reviews
 while not on_target:
+
+    # scroll review
     while not target_found:
         ActionChains(driver)\
         .scroll_from_origin(scroll_origin, 0, 1500)\
@@ -86,30 +89,38 @@ while not on_target:
     data_reviews = []
     for review in reviews:
         try:
+            # get time
             time = time_to_timestamp(review.find_element(By.CLASS_NAME, "rsqaWe").text)
             if time >= before_timestamp: continue
             if time < target_timestamp: on_target = True; break
 
+            # get review text
+            content_element = review.find_elements(By.CLASS_NAME, "MyEned") if review.find_elements(By.CLASS_NAME, "MyEned") else None
+
+            if content_element is not None:
+                # expand review
+                expand_button = review.find_elements(By.CSS_SELECTOR, "[aria-label='Lihat lainnya']")
+                expand_button[0].click() if expand_button else None
+
+                # get review content
+                content = content_element[0].find_element(By.CLASS_NAME, "wiI7pd").text
+            else:
+                continue
+
+            # get username
             username = review.find_element(By.CLASS_NAME, "d4r55").text
+
+            # get rating
             rating = stars_to_int(review.find_element(By.CLASS_NAME, "kvMYJc").get_attribute("aria-label"))
+
+            # get likes
             likes = likes_to_int(review.find_elements(By.CLASS_NAME, "pkWtMe"))
 
-            expand_button = review.find_elements(By.CSS_SELECTOR, "[aria-label='Lihat lainnya']")
-            expand_button[0].click() if expand_button else None
 
-            # content_element = review.find_elements(By.CLASS_NAME, "wiI7pd")
-            content_element = review.find_elements(By.CLASS_NAME, "MyEned")
-
-            content = content_element[0].find_element(By.CLASS_NAME, "wiI7pd").text if content_element else "Tidak ada komentar"
-
-            if content == "Tidak ada komentar": continue
-
+            # get review context
             review_contexts_elements = review.find_elements(By.CLASS_NAME, "RfDO5c")
 
-            review_context_1 = None
-            review_context_2 = None
-            review_context_3 = None
-            review_context_4 = None
+            review_context_1, review_context_2, review_context_3, review_context_4 = None, None, None, None
             if review_contexts_elements:
                 idx = 0
 
@@ -125,6 +136,19 @@ while not on_target:
 
                     idx += 1
 
+            # get answer
+            answer_element = review.find_elements(By.CLASS_NAME, "CDe7pd") if review.find_elements(By.CLASS_NAME, "CDe7pd") else None
+
+            answer = None
+            if answer_element:
+                # search expand button
+                expand_button = answer_element[0].find_elements(By.CSS_SELECTOR, "[aria-label='Lihat lainnya']")
+                expand_button[0].click() if expand_button else None
+
+                # get answer
+                answer = answer_element[0].find_element(By.CLASS_NAME, "wiI7pd").text
+
+
             data_reviews.append({
                 "username": username,
                 "time": time,
@@ -134,7 +158,8 @@ while not on_target:
                 "review_context_1": review_context_1,
                 "review_context_2": review_context_2,
                 "review_context_3": review_context_3,
-                "review_context_4": review_context_4
+                "review_context_4": review_context_4,
+                "answer": answer
             })
 
         except Exception as e:
@@ -144,14 +169,37 @@ while not on_target:
 driver.quit()
 
 # Clean data
+data_reviews.reverse()
+
+# clean member
+data_reviews_after = []
+have_last_username = False
+
+for data in data_reviews:
+    print(data["username"])
+    if data["username"] == last_username:
+        have_last_username = True
+        continue
+
+    if have_last_username is True:
+        data_reviews_after.append(data)
+
+if have_last_username is True:
+    data_reviews = data_reviews_after
+
+# clean text
 pattern = '[^a-zA-Z0-9.]'
 replacement = ' '
 
-data_reviews.reverse()
 for data in data_reviews:
     data["content"] = re.sub(pattern, replacement, data["content"])
     data["content"] = data["content"].strip()
     data["content"] = re.sub(r"\s{2,}", ' ', data['content'])
+
+    if data["answer"] is not None:
+        data["answer"] = re.sub(pattern, replacement, data["answer"])
+        data["answer"] = data["answer"].strip()
+        data["answer"] = re.sub(r"\s{2,}", ' ', data['answer'])
 
 print("Total review yang didapat: ", len(data_reviews))
 
@@ -159,4 +207,5 @@ print("Total review yang didapat: ", len(data_reviews))
 # to_csv(data_reviews)
 
 # save to database
-to_db(data_reviews)
+if len(data_reviews) > 0:
+    to_db(data_reviews)
