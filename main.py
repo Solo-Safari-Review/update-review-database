@@ -176,7 +176,6 @@ data_reviews_after = []
 have_last_username = False
 
 for data in data_reviews:
-    print(data["username"])
     if data["username"] == last_username:
         have_last_username = True
         continue
