@@ -7,11 +7,11 @@ from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
 import time, re, mysql.connector
 from datetime import datetime, timedelta
 from prep_func import time_to_timestamp, stars_to_int, likes_to_int
-from save import to_csv, to_db
+from save import to_db
 
 # Initialize WebDriver
 options = webdriver.ChromeOptions()
-options.add_argument("--headless")  # Run without open the browser
+options.add_argument("--headless=new")  # Run without open the browser
 driver = webdriver.Chrome(options=options)
 
 # URL Google Maps
@@ -201,9 +201,6 @@ for data in data_reviews:
         data["answer"] = re.sub(r"\s{2,}", ' ', data['answer'])
 
 print("Total review yang didapat: ", len(data_reviews))
-
-# save to csv
-# to_csv(data_reviews)
 
 # save to database
 if len(data_reviews) > 0:
