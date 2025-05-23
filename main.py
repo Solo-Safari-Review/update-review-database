@@ -11,6 +11,7 @@ from save import to_db
 from preprocessing import preprocessing
 from get_attributes import *
 from scrapping_function import *
+import json
 
 # Initialize WebDriver
 options = webdriver.ChromeOptions()
@@ -207,8 +208,20 @@ for item in data_reviews:
     item['review_length'] = get_length(item['content'])
     item['is_weekend'] = is_weekend(item['time'])
 
-print("Total review yang didapat: ", len(data_reviews))
+if data_reviews: # Ensure data_reviews is not empty before trying to dump
+    try:
+        json_output = json.dumps(data_reviews, default=json_datetime_converter, indent=4) # indent for pretty print, optional
+        print(json_output)
 
-# save to database
-if len(data_reviews) > 0:
-    to_db(data_reviews)
+        if json_output:
+            # save to database
+            to_db(data_reviews)
+
+    except TypeError as e:
+        # Fallback or error representation if serialization fails for an unexpected reason
+        error_json = json.dumps({"error": "Failed to serialize data_reviews to JSON", "details": str(e)})
+        print(error_json)
+elif not data_reviews and 'target_timestamp' in locals(): # If no new reviews were fetched
+    print(json.dumps([])) # Print an empty JSON array
+else: # If data_reviews was never populated or an earlier critical error occurred
+    print(json.dumps({"error": "No data was processed or an early error occurred."}))
