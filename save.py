@@ -37,8 +37,8 @@ def to_db(data):
     conn = connect_db()
     cursor = conn.cursor()
     query = """
-    INSERT INTO reviews (username, likes, content, rating, review_context_1, review_context_2, review_context_3, review_context_4, answer, created_at)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    INSERT INTO reviews (username, likes, content, rating, review_context_1, review_context_2, review_context_3, review_context_4, answer, created_at, answered_any_review_context, review_length, contains_question, contains_number, is_weekend, is_local_guide, reviewer_number_of_reviews, is_extreme_review, raw_content, image_count)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
 
     for review in data:
@@ -53,6 +53,16 @@ def to_db(data):
             review["review_context_4"],
             review["answer"],
             review["time"],
+            review["answered_any_review_context"],
+            review["review_length"],
+            review["contains_question"],
+            review["contains_number"],
+            review["is_weekend"],
+            review["is_local_guide"],
+            review["reviewer_number_of_reviews"],
+            review["is_extreme_review"],
+            review["raw_content"],
+            review["image_count"],
         ))
 
     conn.commit()

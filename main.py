@@ -4,14 +4,17 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
-import time, re, mysql.connector
-from datetime import datetime, timedelta
-from prep_func import time_to_timestamp, stars_to_int, likes_to_int
+import time, mysql.connector
+from datetime import datetime
+from prep_func import *
 from save import to_db
+from preprocessing import preprocessing
+from get_attributes import *
+from scrapping_function import *
 
 # Initialize WebDriver
 options = webdriver.ChromeOptions()
-options.add_argument("--headless=new")  # Run without open the browser
+# options.add_argument("--headless=new")  # Run without open the browser
 driver = webdriver.Chrome(options=options)
 
 # URL Google Maps
@@ -56,16 +59,19 @@ query = "SELECT * FROM reviews ORDER BY id DESC LIMIT 1"
 cursor.execute(query)
 last_data = cursor.fetchone()
 
-target_timestamp = last_data['created_at'].replace(minute=0, second=0, microsecond=0)
-last_username = last_data['username']
+if last_data:
+    target_timestamp = last_data['created_at'].replace(minute=0, second=0, microsecond=0)
+    last_username = last_data['username']
+else:
+    # manual timestamp
+    target_timestamp = time_to_timestamp("1 hari lalu")
+    last_username = ""
+
+before_timestamp = datetime.now()
+on_target = False
 
 cursor.close()
 conn.close()
-
-# manual timestamp
-# target_timestamp = time_to_timestamp("sebulan lalu")
-before_timestamp = datetime.now()
-on_target = False
 
 # get the frame element
 frame = driver.find_element(By.CLASS_NAME, "DxyBCb")
@@ -88,66 +94,71 @@ while not on_target:
 
     data_reviews = []
     for review in reviews:
-        try:
             # get time
-            time = time_to_timestamp(review.find_element(By.CLASS_NAME, "rsqaWe").text)
+            try:
+                time = getTime(review)
+            except Exception as e:
+                print(f"Error time: {e}")
+
             if time >= before_timestamp: continue
             if time < target_timestamp: on_target = True; break
 
             # get review text
-            content_element = review.find_elements(By.CLASS_NAME, "MyEned") if review.find_elements(By.CLASS_NAME, "MyEned") else None
+            try:
+                content = getReviewText(review)
+                raw_content = content
+            except Exception as e:
+                print(f"Error content: {e}")
 
-            if content_element is not None:
-                # expand review
-                expand_button = review.find_elements(By.CSS_SELECTOR, "[aria-label='Lihat lainnya']")
-                expand_button[0].click() if expand_button else None
-
-                # get review content
-                content = content_element[0].find_element(By.CLASS_NAME, "wiI7pd").text
-            else:
-                continue
+            if content is None: continue
 
             # get username
-            username = review.find_element(By.CLASS_NAME, "d4r55").text
+            try:
+                username = getUsername(review)
+            except Exception as e:
+                print(f"Error username: {e}")
+
+            # get local guide, total reviews
+            try:
+                is_local_guide, reviewer_number_of_reviews = getSubUserInfo(review)
+            except Exception as e:
+                print(f"Error sub_user_info: {e}")
 
             # get rating
-            rating = stars_to_int(review.find_element(By.CLASS_NAME, "kvMYJc").get_attribute("aria-label"))
+            try:
+                rating = getRating(review)
+            except Exception as e:
+                print(f"Error rating: {e}")
 
             # get likes
-            likes = likes_to_int(review.find_elements(By.CLASS_NAME, "pkWtMe"))
+            try:
+                likes = getLikes(review)
+            except Exception as e:
+                print(f"Error likes: {e}")
 
+            # get images
+            try:
+                image_count = getImageCount(review)
+            except Exception as e:
+                print(f"Error image_count: {e}")
 
             # get review context
-            review_contexts_elements = review.find_elements(By.CLASS_NAME, "RfDO5c")
-
-            review_context_1, review_context_2, review_context_3, review_context_4 = None, None, None, None
-            if review_contexts_elements:
-                idx = 0
-
-                for review_context in review_contexts_elements:
-                    if review_contexts_elements[idx].text == "Waktu kunjungan":
-                        review_context_1 = review_contexts_elements[idx + 1].text
-                    elif review_contexts_elements[idx].text == "Waktu antrean":
-                        review_context_2 = review_contexts_elements[idx + 1].text
-                    elif review_contexts_elements[idx].text == "Sebaiknya buat reservasi":
-                        review_context_3 = review_contexts_elements[idx + 1].text
-                    elif review_contexts_elements[idx].text == "Tempat parkir":
-                        review_context_4 = review_contexts_elements[idx + 1].text
-
-                    idx += 1
+            try:
+                review_context_1, review_context_2, review_context_3, review_context_4 = getReviewContexts(review)
+            except Exception as e:
+                print(f"Error review_contexts: {e}")
 
             # get answer
-            answer_element = review.find_elements(By.CLASS_NAME, "CDe7pd") if review.find_elements(By.CLASS_NAME, "CDe7pd") else None
+            try:
+                answer = getAnswer(review)
+            except Exception as e:
+                print(f"Error answer: {e}")
 
-            answer = None
-            if answer_element:
-                # search expand button
-                expand_button = answer_element[0].find_elements(By.CSS_SELECTOR, "[aria-label='Lihat lainnya']")
-                expand_button[0].click() if expand_button else None
-
-                # get answer
-                answer = answer_element[0].find_element(By.CLASS_NAME, "wiI7pd").text
-
+            # get is_extreme_review
+            try:
+                is_extreme_review = getIsExtremeReview(rating)
+            except Exception as e:
+                print(f"Error is_extreme_review: {e}")
 
             data_reviews.append({
                 "username": username,
@@ -159,12 +170,13 @@ while not on_target:
                 "review_context_2": review_context_2,
                 "review_context_3": review_context_3,
                 "review_context_4": review_context_4,
-                "answer": answer
+                "answer": answer,
+                "is_local_guide": is_local_guide,
+                "reviewer_number_of_reviews": reviewer_number_of_reviews,
+                "image_count": image_count,
+                "is_extreme_review": is_extreme_review,
+                "raw_content": raw_content
             })
-
-        except Exception as e:
-            print(f"Error: {e}")
-            continue
 
 driver.quit()
 
@@ -186,19 +198,14 @@ for data in data_reviews:
 if have_last_username is True:
     data_reviews = data_reviews_after
 
-# clean text
-pattern = '[^a-zA-Z0-9.]'
-replacement = ' '
-
-for data in data_reviews:
-    data["content"] = re.sub(pattern, replacement, data["content"])
-    data["content"] = data["content"].strip()
-    data["content"] = re.sub(r"\s{2,}", ' ', data['content'])
-
-    if data["answer"] is not None:
-        data["answer"] = re.sub(pattern, replacement, data["answer"])
-        data["answer"] = data["answer"].strip()
-        data["answer"] = re.sub(r"\s{2,}", ' ', data['answer'])
+# preprocessing & get attributes
+for item in data_reviews:
+    item['content'] = preprocessing(item['content'])
+    item['answered_any_review_context'] = answer_context(item['review_context_1'], item['review_context_2'], item['review_context_3'], item['review_context_4'])
+    item['contains_question'] = contains_question(item['content'])
+    item['contains_number'] = contains_number(item['content'])
+    item['review_length'] = get_length(item['content'])
+    item['is_weekend'] = is_weekend(item['time'])
 
 print("Total review yang didapat: ", len(data_reviews))
 
